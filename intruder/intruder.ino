@@ -1,35 +1,47 @@
-#include <EEPROM.h>
 
-const int sensorPin = 6;
+#include <Keypad.h>
+#include <EEPROM.h>
+#include <Timer.h>
+
+
+bool lockState=false;
+char saved_code[4];
+char inprogress_code[4];
+int currentNumber = 0;
+
+const int sensorPin = 11;
 const int buzzerPin = 10;
 const int vibratePin = A5;
 const int GREEN = 12;
 const int RED = 13;
 
-int code[4];
-int lockState = 0;
-int currentNumber = 0;
-const int totalButtons= 4;
-int button[totalButtons] = {2, 3, 4, 5};
-int lastButtonState[totalButtons]; // HIGH = not pressed, LOW = pressed (held down)
-bool buttonActive[totalButtons]; // TRUE = if active, FALSE = otherwise
-unsigned long lastDebounceTime[totalButtons]; // millis() recorded here 
 
-//ian added here
+const byte ROWS = 4; 
+const byte COLS = 4; 
+
+char hexaKeys[ROWS][COLS] = {
+  {'1', '2', '3', 'A'},
+  {'4', '5', '6', 'B'},
+  {'7', '8', '9', 'C'},
+  {'*', '0', '#', 'D'}
+};
+
+byte rowPins[ROWS] = {9, 8, 7, 6}; 
+byte colPins[COLS] = {5, 4, 3, 2}; 
+
+Keypad keypad = Keypad(makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS); 
 unsigned long sensorConnectionHistory = 0;
-bool sensorBroken; 
-//ian end add here
+bool sensorBroken;
 
-int debounceDelay=20;
-int longPressDelay=750;
-void setup() {
+unsigned long duration = 1000;
+unsigned long last = 0;
+int state = 0;
+
+Timer t;
+
+void setup(){
   Serial.begin(9600);
-  for (int i=0; i < totalButtons; i++) {
-    lastButtonState[i] = HIGH;
-    buttonActive[i] = false;
-    lastDebounceTime[i] = 0;
-    pinMode(button[i], INPUT);
-  }  
+  //keypad.addEventListener(buttonPress);
 
   pinMode(sensorPin, INPUT_PULLUP);
   pinMode(buzzerPin, OUTPUT);
@@ -37,24 +49,113 @@ void setup() {
   
   pinMode(GREEN, OUTPUT);
   pinMode(RED, OUTPUT);
-  digitalWrite(RED, HIGH);
-  
-  if (EEPROM.read(0) != 0xff)
-    for (int i = 0; i < 4; ++i)
-        code[i] = EEPROM.read(i);
-  else
-    for (int i = 0; i < 4; ++i)
-      code[i] = 0;
+
+  EEPROM.write(99, 0);
+  if (EEPROM.read(99) == 0x3C) {
+    for (int i = 0; i < 4; ++i){
+        saved_code[i] = EEPROM.read(i);
+    }
+    lockState = true;
+    digitalWrite(RED, HIGH);
+    digitalWrite(GREEN, LOW);
+  }
+  else {
+    for (int i = 0; i < 4; ++i) {
+      saved_code[i] = 0;
+    }
+    lockState = false;
+    digitalWrite(RED, LOW);
+    digitalWrite(GREEN, HIGH);
+  }
 }
+  
 void loop() { 
-  digitalWrite(vibratePin, HIGH); 
+  //digitalWrite(vibratePin, HIGH);
+  //Serial.print(lockState);
   updateSensor();
-  //ian end add here 
-  updateButtons();
-  //ian added here
+  buttonPress();
   checkLock();
 }
 
+// what happens when any button is pressed
+void buttonPress(){
+  char key = keypad.getKey();
+  Serial.print(key);
+  t.update();
+  switch (key){
+      case '#': 
+      
+        break;
+      case '*': 
+     
+      break;
+      case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9': case '0':
+        inprogress_code[currentNumber] = key;
+        
+        Serial.println();
+        Serial.println(currentNumber);
+        currentNumber++;    
+        Serial.println(sizeof(saved_code));
+        Serial.print("state = ");
+        Serial.println(lockState);
+
+          t.pulse(vibratePin, 100, LOW);
+
+        if (currentNumber >= sizeof(saved_code)){
+          if (lockState){ unlock();  } else { setlock(); }
+        }
+      break;
+    }
+
+}
+
+// unlocks device
+void unlock(){
+  bool match = true;
+  for (int i=0; i<sizeof(saved_code); i++ ){
+    if (match){
+      match = saved_code[i] == inprogress_code[i];
+    }
+  }
+  
+  Serial.print("match = ");
+  Serial.println(match);
+  Serial.print("saved_code = ");
+  Serial.println(saved_code[0]+saved_code[1]+saved_code[2]+saved_code[3]);
+   Serial.print("inprogress_code = ");
+  Serial.println(inprogress_code[0]+inprogress_code[1]+inprogress_code[2]+inprogress_code[3]);
+  
+  if (match){  // if entered code is correct
+    blink(GREEN);
+    digitalWrite(RED, LOW);
+    lockState = false;
+    for (int i=0; i<sizeof(saved_code); i++){
+      inprogress_code[i] = 0;
+      EEPROM.write(i,0);
+    }
+    EEPROM.write(99,0);  
+  } else {  // if entered code is wrong
+    blink(RED);
+    delay(50);
+    blink(RED);
+  }
+  currentNumber=0;
+}
+
+// stores the locked code
+void setlock(){
+  for (int i=0; i<sizeof(inprogress_code); i++){
+    saved_code[i] = inprogress_code[i];
+    EEPROM.write(i,inprogress_code[i]);
+  }
+  EEPROM.write(99,0x3C);
+  currentNumber=0;
+  lockState=true;
+  digitalWrite(RED, HIGH);
+  digitalWrite(GREEN, LOW);
+}
+
+// modifies sensorBroken variable
 void updateSensor(){
   int val = digitalRead(sensorPin);
   sensorConnectionHistory = sensorConnectionHistory << 1 ;
@@ -64,146 +165,28 @@ void updateSensor(){
     sensorBroken = true;
   } else { 
     sensorBroken = false;
-
   }
 }
 
-void checkLock(){ 
-  if(sensorBroken && !lockState){
-    Serial.println("intruder");
-    tone(buzzerPin, 1000); // Send 1KHz sound signal...
-    delay(1000);        // ...for 1 sec
-    noTone(buzzerPin);     // Stop sound...
-    delay(1000);        // ...for 1sec
-  }
-}
+// if in locked state and sensor is broken
+void checkLock(){
+  
+  if ((millis() - last) > duration){
+    if (state){
 
-
-
-/*
-Loops through all the buttons to get the state of the button
-to update the state of the lock.
-*/
-void updateButtons() {
-  for (int i = 0; i < totalButtons; i++) {
-    int buttonState = changeButtonState(i);
-    if (buttonState == 1)
-      changeLockState(i, 0);
-    if (buttonState == 2)
-      changeLockState(0, 1);
-  }
-}
-int changeButtonState(int number)
-{
-  int reading = digitalRead(button[number]);
-  //State change in button
-  if (reading != lastButtonState[number]) {
-    if (reading==HIGH && !buttonActive[number]){
-      lastButtonState[number] = reading;
-      return 0; // Not active and not pressed
-    }
-    
-    // Was active, is now released
-    if (reading==HIGH && buttonActive[number]) {
-      if (millis() - lastDebounceTime[number] > debounceDelay) {
-        lastButtonState[number] = reading;
-        buttonActive[number]=true;
-        return 1; // Held for a short time
+      if(sensorBroken && lockState){
+        tone(buzzerPin, 900,1000);
+        state = 0;
+        //Serial.println("on");
       }
-      lastButtonState[number] = reading;
-      buttonActive[number]=false;
-      return 0; // Held for too short a time, unpressed
+    } else{
+        state=1;
     }
-    
-    // Is currently being held
-    else if (reading==LOW) {
-      // Was not active
-      if (!buttonActive[number]) {
-        lastDebounceTime[number]=millis();        
-        lastButtonState[number] = reading;
-        buttonActive[number]=true;
-        return 0; //Currently not pressed (technically needs to be released to count)
-      }
-      return 0; // Currently not pressed (technically) and was active
-    }
+    last = millis();
   }
-  // Was not held, no state change
-  if (reading==HIGH) {
-    lastButtonState[number] = reading;
-    buttonActive[number]=false;
-    return 0;
-  }
-  // Being held, no state change
-  if (reading==LOW) {
-    if (millis() - lastDebounceTime[number] > longPressDelay && buttonActive[number]) {
-      lastButtonState[number] = reading;
-      buttonActive[number]=false;
-      return 2; // Held for long enough to count as long press
-    } else {
-      return 0; // Not held for long enough time, does not count as pressed yet
-    }
-  }
+  
 }
-/*
-State 0 => locked
-State 1 => unlocked
-State 2 => enter new code
-Duration 0 => short
-Duration 1 => long
-*/
-void changeLockState(int buttonPressed, int duration) {
-  if (lockState == 0 && buttonPressed == code[currentNumber] && duration == 0) {
-    currentNumber++;
-    Serial.println("Correct");
-    blink(RED);
-  }
-  else if(lockState == 1 && buttonPressed == code[currentNumber] && duration == 0) {
-    currentNumber++;
-    Serial.println("correct");
-    blink(GREEN);
-  } else if(lockState != 2) {
-    currentNumber = 0;
-    Serial.println("incorrect, retry");
-    for(int i = 0; i < 5; i++) {
-      blink(RED);
-      delay(50);
-    }
-  }
-  if(lockState == 1 && duration == 1) {
-    Serial.println("changing code");
-    currentNumber = 0;
-    lockState = 2;
-    digitalWrite(RED, LOW);
-    digitalWrite(GREEN, HIGH);
-  } else if(lockState == 2) {
-    code[currentNumber] = buttonPressed;
-    currentNumber++;
-    Serial.println(buttonPressed);
-  }
-  if(currentNumber == 4 && lockState == 0){
-    lockState = 1;
-    Serial.println("Unlocked");
-    currentNumber = 0;
-  }
-  else if(currentNumber == 4 && lockState == 1) {
-    lockState = 0;
-    Serial.println("Locked");
-    currentNumber = 0;
-  }
-  else if(currentNumber == 4 && lockState == 2) {
-    lockState = 0;
-    Serial.println("Locked");
-    currentNumber = 0;
-    for (int i = 0; i < 4; ++i )
-      EEPROM.write(i, code[i]);
-  }
-  if(lockState == 0) {
-    light(RED);
-  } 
-  else if(lockState == 1) {
-    light(GREEN);
-  }
-}
+
 void blink(int led) {
   digitalWrite(led, LOW);
   delay(50);
@@ -214,4 +197,3 @@ void light(int led) {
   digitalWrite(RED, LOW);
   digitalWrite(led, HIGH);
 }
-
