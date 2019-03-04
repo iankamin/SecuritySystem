@@ -134,6 +134,9 @@ void unlock(){
       EEPROM.write(i,0);
     }
     EEPROM.write(99,0);  
+    tone(buzzerPin, 33, 500);
+    tone(buzzerPin, 41, 500);
+    tone(buzzerPin, 49, 500);
   } else {  // if entered code is wrong
     blink(RED);
     delay(50);
@@ -153,6 +156,10 @@ void setlock(){
   lockState=true;
   digitalWrite(RED, HIGH);
   digitalWrite(GREEN, LOW);
+
+  tone(buttonPress, 49, 500);
+  tone(buttonPress, 41, 500);
+  tone(buttonPress, 33, 500);
 }
 
 // modifies sensorBroken variable
