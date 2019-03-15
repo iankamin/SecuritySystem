@@ -6,6 +6,9 @@ An individual walks up to the numeric keypad and enters the code to enter, each 
 Once unlocked, a new code can be entered to go into the locked state. This is now the new code that is needed to unlock the system. In addition, the code is saved to EEPROM so that on restart or shutdown the passcode is retained.
 
 ## Hardware
-![keypad](https://github.com/iankamin/SecuritySystem/blob/master/documentation/keypad.jpg?raw=true)
+<img src="https://github.com/iankamin/SecuritySystem/blob/master/documentation/build.jpg?raw=true" height="100">
+
+<img src="https://github.com/iankamin/SecuritySystem/blob/master/documentation/keypad.jpg?raw=true" height="100">
+
 
 The microcontroller is housed in a plastic casing with the keypad and LEDs mounted outside. This is powered via 9v battery. The IR transmitter is powered by another 9v battery on the other side of the passageway. This was done to allow us to separate the IR break sensors further.
